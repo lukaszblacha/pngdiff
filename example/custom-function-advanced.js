@@ -1,37 +1,9 @@
-var fs = require('fs');
 var pngdiff = require('../');
 
-var image2Stream = fs.createReadStream('2.png');
-pngdiff.outputDiff('1.png', image2Stream, 'diffOutput.png')
-    .then(function(data) {
-        console.log(data.metric > 0 ? 'Difference detected.' : 'No difference');
-        console.log('Diff saved to file ' + data.output);
-    })
-    .catch(function(err) {
-        console.error(err);
-    });
-
-var image1Buffer = fs.readFileSync('1.png');
-pngdiff.outputDiffStream(image1Buffer, '2.png', diffFn)
-    .then(function(data) {
-        if (data.metric === 0) {
-            console.log('No difference, no need to output diff result.');
-        } else {
-            data.output.pipe(fs.createWriteStream('diffOutput2.png'));
-        }
-    })
-    .catch(function(err) {
-        console.error(err);
-    });
-
-pngdiff.outputDiff('1.png', '2.png', 'diffOutput.png', changeFn)
+pngdiff.outputDiff('1.png', '2.png', 'diff.png', diffFn)
     .catch(function(err) {
         console.error(err.message);
     });
-
-function diffFn(pixel1, pixel2, match) {
-    return match ? [255, 255, 255, 255] : [0, 0, 0, 255];
-}
 
 function getAvg(pixel1, pixel2) {
     var result = [];
@@ -41,7 +13,7 @@ function getAvg(pixel1, pixel2) {
     return result;
 }
 
-function changeFn(pixel1, pixel2, match) {
+function diffFn(pixel1, pixel2, match) {
     var addRed = 60;
     if (match) {
         return [
