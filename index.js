@@ -1,171 +1,140 @@
 'use strict';
-
+var Promise = require('bluebird');
 var PNG = require('pngjs').PNG;
 var Stream = require('stream');
 
 var fs = require('fs');
 var streamifier = require('streamifier');
-var util = require('util');
 
-function _getDimsMismatchErrMsg(dims1, dims2) {
-  return util.format(
-    'Images not the same dimension. First: %sx%s. Second: %sx%s.',
-    dims1[0],
-    dims1[1],
-    dims2[0],
-    dims2[1]
-  );
-}
+function inputToStream(streamOrBufOrPath) {
+    return new Promise(function(resolve, reject) {
+        if (typeof streamOrBufOrPath === 'string') {
+            streamOrBufOrPath = fs
+                .createReadStream(streamOrBufOrPath)
+                .once('error', reject);
+        } else if (streamOrBufOrPath instanceof Buffer) {
+            streamOrBufOrPath = streamifier
+                .createReadStream(streamOrBufOrPath)
+                .once('error', reject);
+        }
 
-function _turnPathOrStreamOrBufIntoStream(streamOrBufOrPath, done) {
-  if (typeof streamOrBufOrPath === 'string') {
-    streamOrBufOrPath = fs.createReadStream(streamOrBufOrPath).once('error', done);
-  }
+        if (!(streamOrBufOrPath instanceof Stream)) {
+            reject(new Error('Argument needs to be a valid read path, stream or buffer.'));
+        }
 
-  if (streamOrBufOrPath instanceof Buffer) {
-    streamOrBufOrPath = streamifier.createReadStream(streamOrBufOrPath).once('error', done);
-  }
-
-  if (!(streamOrBufOrPath instanceof Stream)) {
-    return done(new Error('Argument needs to be a valid read path, stream or buffer.'));
-  }
-
-  done(null, streamOrBufOrPath);
-}
-
-function _turnPathsOrStreamsOrBufsIntoStreams(streamOrBufOrPath1, streamOrBufOrPath2, done) {
-  _turnPathOrStreamOrBufIntoStream(streamOrBufOrPath1, function(err, res1) {
-    if (err) return done(err);
-
-    _turnPathOrStreamOrBufIntoStream(streamOrBufOrPath2, function(err, res2) {
-      if (err) return done(err);
-
-      done(null, res1, res2);
+        resolve(streamOrBufOrPath);
     });
-  });
+}
+
+function turnInputsIntoStreams(input1, input2) {
+    var streams = [inputToStream(input1), inputToStream(input2)];
+    return Promise.all(streams);
+}
+
+function defaultDiffFunction(pixel1, pixel2, match) {
+    if (match) {
+        return [0, 0, 0, 0];
+    } else {
+        return [
+            255 - Math.abs(pixel1[0] - pixel2[0]),
+            255 - Math.abs(pixel1[1] - pixel2[1]),
+            255 - Math.abs(pixel1[2] - pixel2[2]),
+            Math.max(100, 255 - Math.abs(pixel1[3] - pixel2[3]))
+        ]
+    }
+}
+
+function createPng(input) {
+    return new Promise(function (resolve, reject) {
+        var png = new PNG();
+        input.pipe(png);
+        png.once('error', reject);
+        png.on('parsed', function () {
+            resolve(png);
+        });
+    });
 }
 
 /**
  * option
- * 	outputIdenticalPixelsAsTransparent: false - turns off/on the highlighting feature
+ *    diffFunction: function that changes color of the pixel
  */
-function outputDiffStream(
-  streamOrBufOrPath1,
-  streamOrBufOrPath2,
-  outputIdenticalPixelsAsTransparent,
-  done
-) {
-  // first format, without option
-  if (typeof outputIdenticalPixelsAsTransparent == 'function') {
-    done = outputIdenticalPixelsAsTransparent;
-    outputIdenticalPixelsAsTransparent = false;
-  }
+function outputDiffStream(streamOrBufOrPath1,
+                          streamOrBufOrPath2,
+                          diffFunction) {
+    diffFunction = diffFunction || defaultDiffFunction;
 
-  _turnPathsOrStreamsOrBufsIntoStreams(
-    streamOrBufOrPath1,
-    streamOrBufOrPath2,
-    function(err, stream1, stream2) {
-      if (err) return done(err);
+    return turnInputsIntoStreams(streamOrBufOrPath1, streamOrBufOrPath2)
+        .then(function (streams) {
+            return Promise.all([createPng(streams[0]), createPng(streams[1])])
+        })
+        .then(function (pngs) {
+            var width = Math.min(pngs[0].width, pngs[1].width);
+            var height = Math.min(pngs[0].height, pngs[1].height);
+            var dx = Math.abs(pngs[0].width - pngs[1].width);
+            var dy = Math.abs(pngs[0].height - pngs[1].height);
+            var output = new PNG({
+                width: width + dx,
+                height: height + dy
+            });
 
-      // diff metric is either 0 or 1 for now. Might support outputting some diff
-      // value in the future
-      var diffMetric = 0;
-      var writeStream = new PNG();
-      stream1.pipe(writeStream).once('error', done).on(
-        'parsed',
-        function() {
-          var data1 = this.data;
-          var dims1 = [this.width, this.height];
+            var diffMetric = 0;
+            var offset = 0;
+            var i;
+            for (var y = 0; y < height + dy; y++) {
+                for (var x = 0; x < width + dx; x++) {
+                    var pixel1 = [0, 0, 0, 0];
+                    var pixel2 = [0, 0, 0, 0];
 
-          if (outputIdenticalPixelsAsTransparent) {
-            writeStream = new PNG({width: this.width, height: this.height});
-          }
-
-          stream2.pipe(new PNG()).once('error', done).on(
-            'parsed',
-            function() {
-              var data2 = this.data;
-              var dims2 = [this.width, this.height];
-
-              if (data1.length !== data2.length) {
-                return done(new Error(_getDimsMismatchErrMsg(dims1, dims2)));
-              }
-
-              var i = 0;
-              var data = writeStream.data;
-
-              // chunk of 4 values: r g b a
-              while (data1[i] != null) {
-                // var r, g, b, a;
-                if (
-                  data1[i] !== data2[i] ||
-                  data1[i + 1] !== data2[i + 1] ||
-                  data1[i + 2] !== data2[i + 2] ||
-                  data1[i + 3] !== data2[i + 3]
-                ) {
-                  diffMetric = 1;
-
-                  // draw only differences on the output image
-                  if (outputIdenticalPixelsAsTransparent) {
-                    data[i] = data2[i];
-                    data[i + 1] = data2[i + 1];
-                    data[i + 2] = data2[i + 2];
-                    data[i + 3] = data2[i + 3];
-                  } else {
-                    // turn the diff pixels redder. No change to alpha
-                    var addRed = 60;
-
-                    if (data2[i] + addRed <= 255) {
-                      data[i] = data2[i] + addRed;
-                      data[i + 1] = Math.max(data2[i + 1] - addRed / 3, 0);
-                      data[i + 2] = Math.max(data2[i + 2] - addRed / 3, 0);
-                    } else {
-                      // too bright; subtract G and B instead
-                      data[i] = data2[i];
-                      data[i + 1] = Math.max(data2[i + 1] - addRed, 0);
-                      data[i + 2] = Math.max(data2[i + 2] - addRed, 0);
+                    if (x < pngs[0].width && y < pngs[0].height) {
+                        i = (y * pngs[0].width + x) * 4;
+                        pixel1 = pngs[0].data.slice(i, i + 4);
                     }
-                  }
+
+                    if (x < pngs[1].width && y < pngs[1].height) {
+                        i = (y * pngs[1].width + x) * 4;
+                        pixel2 = pngs[1].data.slice(i, i + 4);
+                    }
+
+                    var diff;
+                    if (pixel1[0] !== pixel2[0] || pixel1[1] !== pixel2[1] ||
+                        pixel1[2] !== pixel2[2] || pixel1[3] !== pixel2[3]) {
+
+                        diffMetric += 4;
+                        diff = diffFunction(pixel1, pixel2, false);
+                    } else {
+                        diff = diffFunction(pixel1, pixel2, true);
+                    }
+
+                    output.data[offset] = diff[0];
+                    output.data[offset + 1] = diff[1];
+                    output.data[offset + 2] = diff[2];
+                    output.data[offset + 3] = diff[3];
+                    offset += 4;
                 }
-
-                i += 4;
-              }
-
-              return done(null, writeStream.pack(), diffMetric);
             }
-          );
-        }
-      );
-    }
-  );
+
+            return {
+                output: output.pack(),
+                metric: diffMetric / output.data.length * 100
+            };
+        });
 }
 
-function outputDiff(
-  streamOrBufOrPath1,
-  streamOrBufOrPath2,
-  destPath,
-  outputIdenticalPixelsAsTransparent,
-  done
-) {
-  // first format, without option
-  if (typeof outputIdenticalPixelsAsTransparent == 'function') {
-    done = outputIdenticalPixelsAsTransparent;
-    outputIdenticalPixelsAsTransparent = false;
-  }
-
-  outputDiffStream(
-    streamOrBufOrPath1,
-    streamOrBufOrPath2,
-    outputIdenticalPixelsAsTransparent,
-    function(err, res, diffMetric) {
-      if (err) return done(err);
-
-      res.pipe(fs.createWriteStream(destPath)).once('error', done).on(
-        'close',
-        done.bind(null, null, diffMetric)
-      );
-    }
-  );
+function outputDiff(input1, input2, destPath, diffFunction) {
+    return outputDiffStream(input1, input2, diffFunction)
+        .then(function (res) {
+            return new Promise(function(resolve, reject) {
+                res.output.pipe(fs.createWriteStream(destPath))
+                    .once('error', reject)
+                    .once('close', function() {
+                        resolve(res.metric);
+                    })
+            });
+        });
 }
 
-module.exports = {outputDiff: outputDiff, outputDiffStream: outputDiffStream};
+module.exports = {
+    outputDiff: outputDiff,
+    outputDiffStream: outputDiffStream
+};

@@ -4,6 +4,7 @@
   "description": "Small PNG diff utility, written in pure JS for Node.",
   "main": "index.js",
   "dependencies": {
+    "bluebird": "^3.3.4",
     "pngjs": "^2.2.0",
     "streamifier": "^0.1.1"
   },
