@@ -1,7 +1,7 @@
 {
   "name": "pngdiff",
-  "version": "0.3.3",
-  "description": "Small PNG diff utility, written in pure JS for Node.",
+  "version": "0.9.0",
+  "description": "Small PNG diff utility based on chenglou/png-diff",
   "main": "index.js",
   "dependencies": {
     "bluebird": "^3.3.4",
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lukaszblacha/png-diff"
+    "url": "https://github.com/lukaszblacha/pngdiff"
   },
   "keywords": [
     "png",
@@ -25,9 +25,6 @@
     "compare",
     "image"
   ],
-  "author": "chenglou",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/chenglou/png-diff/issues"
-  }
+  "author": "Lukasz Blacha <lukasz.blacha@schibsted.pl>",
+  "license": "MIT"
 }
