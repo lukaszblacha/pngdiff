@@ -1,5 +1,5 @@
 {
-  "name": "png-diff",
+  "name": "pngdiff",
   "version": "0.3.3",
   "description": "Small PNG diff utility, written in pure JS for Node.",
   "main": "index.js",
@@ -10,15 +10,14 @@
   },
   "devDependencies": {
     "concat-stream": "^1.4.3",
-    "mocha": "^1.17.1",
-    "should": "^3.1.3"
+    "tape": "^4.5.1"
   },
   "scripts": {
-    "test": "mocha test/"
+    "test": "node test/index.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenglou/png-diff"
+    "url": "https://github.com/lukaszblacha/png-diff"
   },
   "keywords": [
     "png",

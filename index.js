@@ -11,18 +11,24 @@ function inputToStream(streamOrBufOrPath) {
         if (typeof streamOrBufOrPath === 'string') {
             streamOrBufOrPath = fs
                 .createReadStream(streamOrBufOrPath)
-                .once('error', reject);
+                .once('error', function(err) {
+                    reject(err);
+                });
         } else if (streamOrBufOrPath instanceof Buffer) {
             streamOrBufOrPath = streamifier
                 .createReadStream(streamOrBufOrPath)
-                .once('error', reject);
+                .once('error', function(err) {
+                    reject(err);
+                });
         }
 
         if (!(streamOrBufOrPath instanceof Stream)) {
             reject(new Error('Argument needs to be a valid read path, stream or buffer.'));
         }
 
-        resolve(streamOrBufOrPath);
+        streamOrBufOrPath.once('readable', function() {
+            resolve(streamOrBufOrPath);
+        });
     });
 }
 
@@ -48,8 +54,10 @@ function createPng(input) {
     return new Promise(function (resolve, reject) {
         var png = new PNG();
         input.pipe(png);
-        png.once('error', reject);
-        png.on('parsed', function () {
+        png.once('error', function(err) {
+            reject(err);
+        });
+        png.once('parsed', function () {
             resolve(png);
         });
     });
@@ -128,7 +136,10 @@ function outputDiff(input1, input2, destPath, diffFunction) {
                 res.output.pipe(fs.createWriteStream(destPath))
                     .once('error', reject)
                     .once('close', function() {
-                        resolve(res.metric);
+                        resolve({
+                            output: destPath,
+                            metric: res.metric
+                        });
                     })
             });
         });
